@@ -18,9 +18,9 @@ I built it as a free, local stand-in for Wispr Flow after running out of Wispr's
 
 A small black capsule at the bottom of the screen shows what's going on. Bars move with your voice while it's listening (they sit dim for a moment while the mic opens), then turn into a travelling pulse while it transcribes.
 
-If there's nowhere to type (you were on the desktop or the taskbar), the text goes on your clipboard and a card shows up with a Copy button. The tray menu also has Copy last dictation, for when a paste lands somewhere you didn't mean.
+If there's nowhere to type (you were on the desktop or the taskbar), or the paste itself fails, the text goes on your clipboard and a card shows up with a Copy button. The tray menu also has Copy last dictation, for when a paste lands somewhere you didn't mean.
 
-Normally your clipboard is put back the way it was after pasting.
+Your clipboard is put back the way it was after pasting. Anything on it that Utter can't read (some apps put private formats there) is skipped, and if nothing can be saved the clipboard just keeps your dictation.
 
 ## Polishing with Claude Haiku
 
@@ -135,6 +135,8 @@ One side effect: the Windows microphone indicator flickers briefly on a quick Ri
 ## When something doesn't work
 
 Tray icon, then Open log, opens `%APPDATA%\Utter\utter.log`. The first lines say which key it's listening on. Every press shows up there (`[key] RightAlt down`, `held`, `up after 1840 ms`), followed by the mic, transcription and polish steps, so you can see where it stops.
+
+The log never grows past about 2 MB: at 1 MB it becomes `utter.old.log` (replacing the previous one) and a fresh file starts. It keeps only the first 100 characters of each dictation. A model download that fails or gets interrupted doesn't leave its 480 MB archive behind either.
 
 ## License
 

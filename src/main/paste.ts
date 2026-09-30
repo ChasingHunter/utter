@@ -3,23 +3,33 @@ import { focusWindow, foregroundWindow, sameWindow, sendKeys, VK, waitForModifie
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-/** Copies every format currently on the clipboard so it can be restored later. */
+/**
+ * Copies whatever it can of the current clipboard so it can be restored later.
+ * Formats Chromium can't read are skipped, and an item with nothing readable is dropped
+ * (an empty ClipboardItem throws "at least one MIME type is required"). Never throws:
+ * losing the old clipboard is better than losing the dictation.
+ */
 async function snapshotClipboard(): Promise<ClipboardItem[]> {
-  const items = await clipboard.read().catch(() => [])
-  return Promise.all(
-    items.map(async (item) => {
+  try {
+    const items = await clipboard.read()
+    const saved: ClipboardItem[] = []
+    for (const item of items) {
       const data: Record<string, Blob | string> = {}
       for (const type of item.types) {
         const value = await item.getType(type).catch(() => undefined)
         if (value instanceof Blob || typeof value === 'string') data[type] = value
       }
-      return new ClipboardItem(data)
-    })
-  )
+      if (Object.keys(data).length) saved.push(new ClipboardItem(data))
+    }
+    return saved
+  } catch (err) {
+    console.warn('[paste] could not save the clipboard, it will not be restored:', err instanceof Error ? err.message : err)
+    return []
+  }
 }
 
 /**
- * Types `text` into `target` by pasting it, then puts the user's clipboard (all formats) back.
+ * Types `text` into `target` by pasting it, then puts the user's clipboard back if it could be saved.
  * The pill never takes focus, so the target is normally still in front.
  */
 export async function pasteInto(target: Hwnd, text: string, restore: boolean): Promise<void> {
@@ -35,5 +45,7 @@ export async function pasteInto(target: Hwnd, text: string, restore: boolean): P
   sendKeys([VK.CONTROL, VK.V], true)
   // Give the app time to read the clipboard before we swap it back.
   await sleep(400)
-  if (saved.length) await clipboard.write(saved).catch(() => {})
+  if (saved.length) {
+    await clipboard.write(saved).catch((err) => console.warn('[paste] could not restore the clipboard:', err instanceof Error ? err.message : err))
+  }
 }

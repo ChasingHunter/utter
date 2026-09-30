@@ -22,24 +22,32 @@ if (existsSync(join(dir, '.installed'))) {
 mkdirSync(root, { recursive: true })
 const archive = join(root, `${NAME}.tar.bz2`)
 console.log(`Downloading ${URL}`)
-const res = await fetch(URL)
-if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status}`)
-const total = Number(res.headers.get('content-length')) || 482e6
-let got = 0
-let shown = -1
-const body = Readable.fromWeb(res.body)
-body.on('data', (c) => {
-  got += c.length
-  const pct = Math.floor((got / total) * 100)
-  if (pct !== shown && pct % 5 === 0) process.stdout.write(`\r  ${pct}%`)
-  shown = pct
-})
-await pipeline(body, createWriteStream(archive))
-console.log('\nUnpacking…')
-// Windows 10+ ships bsdtar, which handles .tar.bz2. Full path, because a plain "tar" can be Git's GNU tar,
-// which reads "C:\..." as a remote host and fails.
-execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xjf', archive, '-C', root])
-rmSync(archive, { force: true })
-if (!FILES.every((f) => existsSync(join(dir, f)))) throw new Error('Model files missing after extraction')
-writeFileSync(join(dir, '.installed'), new Date().toISOString())
-console.log(`Installed: ${dir}`)
+try {
+  const res = await fetch(URL)
+  if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status}`)
+  const total = Number(res.headers.get('content-length')) || 482e6
+  let got = 0
+  let shown = -1
+  const body = Readable.fromWeb(res.body)
+  body.on('data', (c) => {
+    got += c.length
+    const pct = Math.floor((got / total) * 100)
+    if (pct !== shown && pct % 5 === 0) process.stdout.write(`\r  ${pct}%`)
+    shown = pct
+  })
+  await pipeline(body, createWriteStream(archive))
+  console.log('\nUnpacking…')
+  // Windows 10+ ships bsdtar, which handles .tar.bz2. Full path, because a plain "tar" can be Git's GNU tar,
+  // which reads "C:\..." as a remote host and fails.
+  execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xjf', archive, '-C', root])
+  if (!FILES.every((f) => existsSync(join(dir, f)))) throw new Error('Model files missing after extraction')
+  writeFileSync(join(dir, '.installed'), new Date().toISOString())
+  console.log(`Installed: ${dir}`)
+} catch (err) {
+  // No half-unpacked model left behind.
+  rmSync(dir, { recursive: true, force: true })
+  throw err
+} finally {
+  // The archive is ~480 MB: never keep it.
+  rmSync(archive, { force: true })
+}

@@ -3,11 +3,11 @@ import { join } from 'node:path'
 import type { PillCommand } from '../preload'
 import { trayIcon, type IconState } from './icon'
 import { SOLO_KEYS, unwatch, watchSoloKey } from './keyhook'
-import { logPath, startFileLog } from './log'
+import { logPath, preview, startFileLog } from './log'
 import { pasteInto } from './paste'
 import { findClaude, polish, polishEngine, prepare, shutdown as shutdownPolish } from './polish'
 import { loadSettings, saveSettings, settings, settingsPath, type Settings } from './settings'
-import { findModel, installModel, MODEL, transcribe, warmUp } from './stt'
+import { findModel, installModel, MODEL, removeStaleDownload, transcribe, warmUp } from './stt'
 import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, sendMaskKey, windowInfo, type Hwnd, type WindowInfo } from './win32'
 
 const E2E = !!process.env.UTTER_E2E
@@ -164,6 +164,7 @@ async function stop(): Promise<void> {
     const raw = await transcribe(samples)
     const t1 = Date.now()
     if (!raw) {
+      console.log(`[utter] ${(samples.length / 16000).toFixed(1)} s audio, stt ${t1 - t0} ms: nothing recognised`)
       setState('idle')
       flash('error', "Didn't catch that", 1200)
       return
@@ -176,26 +177,42 @@ async function stop(): Promise<void> {
       })
     }
     console.log(
-      `[utter] ${(samples.length / 16000).toFixed(1)} s audio, stt ${t1 - t0} ms, polish ${Date.now() - t1} ms → ${targetInfo.app || '?'}: ${JSON.stringify(text)}`
+      `[utter] ${(samples.length / 16000).toFixed(1)} s audio, stt ${t1 - t0} ms, polish ${Date.now() - t1} ms → ${targetInfo.app || '?'}: ${preview(text)}`
     )
     lastText = text
     if (!hasTextTarget(targetInfo)) {
       // Desktop, taskbar, nothing focused: keep it on the clipboard and say so.
-      // Tests run on a real desktop, so they never touch the clipboard.
-      if (!E2E) await clipboard.writeText(text)
-      cardOpen = true
-      setState('idle')
-      send({ type: 'card', text, note: "Nowhere to type, so it's on your clipboard" })
+      await showCopyCard(text, "Nowhere to type, so it's on your clipboard")
       return
     }
     hidePill()
     // Tests run on a real desktop: never paste there.
-    if (!E2E) await pasteInto(target, settings.trailingSpace ? `${text} ` : text, settings.restoreClipboard)
+    if (!E2E) {
+      try {
+        await pasteInto(target, settings.trailingSpace ? `${text} ` : text, settings.restoreClipboard)
+      } catch (err) {
+        // The words are the valuable part: never lose them to a paste problem.
+        console.error('[utter] paste failed:', err instanceof Error ? err.message : err)
+        await showCopyCard(text, "Couldn't paste, so it's on your clipboard")
+        return
+      }
+    }
   } catch (err) {
+    console.error('[utter] dictation failed:', err instanceof Error ? err.stack ?? err.message : err)
     hidePill()
     notify(`Dictation failed: ${err instanceof Error ? err.message : err}`)
   }
   setState('idle')
+}
+
+/** Puts the text on the clipboard and shows the card with a Copy button. */
+async function showCopyCard(text: string, note: string): Promise<void> {
+  // Tests run on a real desktop, so they never touch the clipboard.
+  if (!E2E) await clipboard.writeText(text).catch((err) => console.error('[utter] clipboard write failed:', err))
+  cardOpen = true
+  setState('idle')
+  showPill()
+  send({ type: 'card', text, note })
 }
 
 /** Throws the recording away. */
@@ -448,6 +465,7 @@ app.whenReady().then(async () => {
   const problem = loadSettings()
   if (problem) notify(problem)
   applyLoginItem()
+  removeStaleDownload()
   pill = createPill()
   tray = new Tray(trayIcon('idle'))
   tray.on('click', () => tray?.popUpContextMenu())

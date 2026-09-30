@@ -40,30 +40,45 @@ export function findModel(): string | undefined {
 
 let installing: Promise<void> | undefined
 
+const archivePath = (): string => join(ownModelsDir(), `${MODEL.name}.tar.bz2`)
+
+/** Deletes a download left behind when Utter was closed mid-download (up to ~480 MB). */
+export function removeStaleDownload(): void {
+  if (!installing) rmSync(archivePath(), { force: true })
+}
+
 /** Downloads and unpacks the model into Utter's data folder. `onProgress` gets 0..1 while downloading. */
 export function installModel(onProgress: (fraction: number, phase: 'download' | 'unpack') => void): Promise<void> {
   installing ??= (async () => {
     const dir = ownModelsDir()
     mkdirSync(dir, { recursive: true })
-    const archive = join(dir, `${MODEL.name}.tar.bz2`)
-    const res = await fetch(MODEL.url)
-    if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status}`)
-    const total = Number(res.headers.get('content-length')) || MODEL.sizeMb * 1e6
-    let received = 0
-    const body = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream)
-    body.on('data', (chunk: Buffer) => {
-      received += chunk.length
-      onProgress(Math.min(1, received / total), 'download')
-    })
-    await pipeline(body, createWriteStream(archive))
-    onProgress(1, 'unpack')
-    // Windows 10+ ships bsdtar, which handles .tar.bz2. Call it by full path: a plain "tar" can resolve to
-    // Git's GNU tar (when Git's tools are on PATH), which reads "C:\..." as a remote host and fails.
-    await promisify(execFile)(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xjf', archive, '-C', dir])
-    rmSync(archive, { force: true })
+    const archive = archivePath()
     const modelDir = join(dir, MODEL.name)
-    if (!complete(modelDir)) throw new Error('Model files missing after extraction')
-    writeFileSync(join(modelDir, MARKER), new Date().toISOString())
+    try {
+      const res = await fetch(MODEL.url)
+      if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status}`)
+      const total = Number(res.headers.get('content-length')) || MODEL.sizeMb * 1e6
+      let received = 0
+      const body = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream)
+      body.on('data', (chunk: Buffer) => {
+        received += chunk.length
+        onProgress(Math.min(1, received / total), 'download')
+      })
+      await pipeline(body, createWriteStream(archive))
+      onProgress(1, 'unpack')
+      // Windows 10+ ships bsdtar, which handles .tar.bz2. Call it by full path: a plain "tar" can resolve to
+      // Git's GNU tar (when Git's tools are on PATH), which reads "C:\..." as a remote host and fails.
+      await promisify(execFile)(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xjf', archive, '-C', dir])
+      if (!complete(modelDir)) throw new Error('Model files missing after extraction')
+      writeFileSync(join(modelDir, MARKER), new Date().toISOString())
+    } catch (err) {
+      // Don't leave a half-unpacked model behind; the next attempt starts clean.
+      rmSync(modelDir, { recursive: true, force: true })
+      throw err
+    } finally {
+      // The archive is ~480 MB: never keep it, whether the install worked or not.
+      rmSync(archive, { force: true })
+    }
   })().finally(() => {
     installing = undefined
   })
