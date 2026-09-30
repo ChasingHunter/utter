@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 export interface Settings {
   /**
-   * The talk key. Either one key on its own (LeftAlt, RightAlt, LeftCtrl, RightCtrl, RightShift, CapsLock, F13, F24),
+   * The talk key. Right Alt by default. Either one key on its own (RightAlt, LeftAlt, LeftCtrl, RightCtrl, RightShift, CapsLock, F13, F24),
    * or an Electron accelerator like "Control+Shift+Space".
    * Hold to talk, let go to paste. Double-tap for hands-free; tap again to paste.
    */
@@ -32,7 +32,7 @@ export interface Settings {
 }
 
 const DEFAULTS: Settings = {
-  hotkey: 'LeftAlt',
+  hotkey: 'RightAlt',
   trailingSpace: true,
   restoreClipboard: true,
   maxSeconds: 300,

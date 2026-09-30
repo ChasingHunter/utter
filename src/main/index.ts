@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { PillCommand } from '../preload'
 import { trayIcon, type IconState } from './icon'
 import { SOLO_KEYS, unwatch, watchSoloKey } from './keyhook'
+import { logPath, startFileLog } from './log'
 import { pasteInto } from './paste'
 import { findClaude, polish, polishEngine, prepare, shutdown as shutdownPolish } from './polish'
 import { loadSettings, saveSettings, settings, settingsPath, type Settings } from './settings'
@@ -11,6 +12,7 @@ import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, sendMaskKey
 
 const E2E = !!process.env.UTTER_E2E
 if (process.env.UTTER_DATA_DIR) app.setPath('userData', process.env.UTTER_DATA_DIR)
+startFileLog()
 // Windows drops toast notifications from apps without an ID; unpackaged, the exe path is the ID that works.
 app.setAppUserModelId(app.isPackaged ? 'dev.utter.desktop' : process.execPath)
 
@@ -47,7 +49,7 @@ function send(cmd: PillCommand): void {
   pill?.webContents.send('pill:cmd', cmd)
 }
 
-/** "LeftAlt" → "Left Alt", "Control+Shift+Space" → "Ctrl+Shift+Space". */
+/** "RightAlt" → "Right Alt", "Control+Shift+Space" → "Ctrl+Shift+Space". */
 function keyLabel(): string {
   if (SOLO_KEYS[settings.hotkey]) return settings.hotkey.replace(/([a-z])([A-Z])/g, '$1 $2')
   return settings.hotkey.replace(/\b(Command|Cmd)OrControl\b|\bControl\b/g, 'Ctrl')
@@ -214,13 +216,14 @@ let lastTapAt = 0
 let stopOnRelease = false
 
 /**
- * Single-key mode (Left Alt by default), driven by the low-level hook:
+ * Single-key mode (Right Alt by default), driven by the low-level hook:
  *   hold          talk, release to paste
  *   double-tap    hands-free; the next press pastes
  *   tap / Alt+Tab ignored (the quiet recording is thrown away)
  */
 const soloKey = {
   press(): void {
+    console.log(`[key] ${settings.hotkey} down (${state}${handsFree ? ', hands-free' : ''})`)
     if (state === 'recording' && handsFree) {
       stopOnRelease = true
       if (isAltKey()) sendMaskKey()
@@ -230,6 +233,7 @@ const soloKey = {
     begin()
   },
   hold(): void {
+    console.log(`[key] held (${state})`)
     if (!findModel()) {
       offerModelDownload()
       return
@@ -240,6 +244,7 @@ const soloKey = {
     if (isAltKey()) sendMaskKey()
   },
   release(heldMs: number, solo: boolean): void {
+    console.log(`[key] up after ${heldMs} ms${solo ? '' : ' (was a combo)'} (${state})`)
     if (stopOnRelease) {
       stopOnRelease = false
       void stop()
@@ -260,6 +265,7 @@ const soloKey = {
     void cancel()
   },
   combo(): void {
+    console.log('[key] another key pressed while held: shortcut, not dictation')
     if (state === 'recording' && !handsFree) void cancel()
   }
 }
@@ -305,6 +311,7 @@ function bindHotkey(): void {
       // invalid accelerator
     }
   }
+  console.log(`[utter] talk key ${settings.hotkey}: ${ok ? 'listening' : 'FAILED to bind'}`)
   if (!ok) notify(`Couldn't use ${settings.hotkey} as the talk key. Change "hotkey" in settings.json.`)
 }
 
@@ -401,6 +408,7 @@ function refreshTray(): void {
           ]
         : []),
       { label: 'Edit settings', click: () => void shell.openPath(settingsPath()) },
+      { label: 'Open log', click: () => void shell.openPath(logPath()) },
       { label: 'Reload settings', click: reload },
       { type: 'separator' },
       { label: 'Quit Utter', click: () => app.quit() }

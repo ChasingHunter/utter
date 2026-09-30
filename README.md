@@ -1,6 +1,6 @@
 # Utter
 
-Push-to-talk dictation for Windows. Hold Left Alt, talk, let go, and the text gets typed into whatever app you're in: Slack, Word, a browser, a terminal.
+Push-to-talk dictation for Windows. Hold Right Alt, talk, let go, and the text gets typed into whatever app you're in: Slack, Word, a browser, a terminal.
 
 Speech-to-text runs on your own CPU with NVIDIA's Parakeet TDT 0.6B v2 (int8) through [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). No account, no word limit, and your audio never leaves the PC. If you have Claude Code installed, Claude Haiku also tidies the text for the app you're in, using your Claude plan. That's the part that makes it feel like Wispr Flow. English only for now.
 
@@ -10,9 +10,10 @@ I built it as a free, local stand-in for Wispr Flow after running out of Wispr's
 
 | Do this | What happens |
 |---|---|
-| Hold Left Alt, talk, let go | The text is pasted where your cursor is |
-| Double-tap Left Alt | Hands-free: keep talking, tap Left Alt again to paste |
-| Tap Left Alt, or Alt+Tab, Alt+F4 | Nothing new. Normal Alt shortcuts keep working |
+| Hold Right Alt, talk, let go | The text is pasted where your cursor is |
+| Double-tap Right Alt | Hands-free: keep talking, tap Right Alt again to paste |
+| Tap Right Alt, or use it with another key | Nothing. It works as usual |
+| Left Alt, Alt+Tab, Alt+F4 | Untouched. Utter only listens to Right Alt |
 | Esc while recording | Throws it away |
 
 A small black capsule at the bottom of the screen shows what's going on. Bars move with your voice while it's listening (they sit dim for a moment while the mic opens), then turn into a travelling pulse while it transcribes.
@@ -74,7 +75,7 @@ Tray icon, then Edit settings, opens `%APPDATA%\Utter\settings.json`. After edit
 
 | Key | Default | What it does |
 |---|---|---|
-| `hotkey` | `LeftAlt` | One key on its own (`LeftAlt`, `RightAlt`, `LeftCtrl`, `RightCtrl`, `RightShift`, `CapsLock`, `F13`, `F24`) or a combo like `Control+Shift+Space` |
+| `hotkey` | `RightAlt` | One key on its own (`RightAlt`, `LeftAlt`, `LeftCtrl`, `RightCtrl`, `RightShift`, `CapsLock`, `F13`, `F24`) or a combo like `Control+Shift+Space` |
 | `polish` | `auto` | `auto` uses your Claude plan, else an API key, else nothing. `subscription` or `api` forces one. `off` never polishes |
 | `anthropicApiKey` | `""` | Key for the API route. Empty means use `ANTHROPIC_API_KEY` |
 | `polishTimeoutMs` | `5000` | Paste the raw text if Haiku takes longer than this |
@@ -117,9 +118,11 @@ None of the tests paste anything or touch your clipboard, since they run on your
 
 ## How the Alt key works
 
-Electron can't bind a lone modifier, so Utter installs a low-level keyboard hook (`src/main/keyhook.ts`). It only watches; every key still reaches your apps. Recording starts the moment Left Alt goes down, so your first word isn't lost, but the capsule only shows once you've held it for 250 ms. If you press another key first (Alt+Tab), the recording is thrown away. At the 250 ms mark Utter sends an unused key code (0xE8), so that letting go of Alt doesn't open the menu bar in the app you're typing in.
+Electron can't bind a lone modifier, so Utter installs a low-level keyboard hook (`src/main/keyhook.ts`). It only watches; every key still reaches your apps. Recording starts the moment Right Alt goes down, so your first word isn't lost, but the capsule only shows once you've held it for 250 ms. If you press another key first, the recording is thrown away. At the 250 ms mark Utter sends an unused key code (0xE8), so that letting go of Alt doesn't open the menu bar in the app you're typing in.
 
-One side effect: the Windows microphone indicator flickers briefly on Alt+Tab, because the mic opens on every Alt press.
+On keyboard layouts where Right Alt is AltGr (German, French, US-International and others), Windows reports every Right Alt press as Ctrl+Alt. Utter ignores that made-up Ctrl, so AltGr works as a talk key too. AltGr+key characters still type normally, since pressing another key counts as a shortcut.
+
+One side effect: the Windows microphone indicator flickers briefly on a quick Right Alt tap, because the mic opens on every press.
 
 ## Known limits
 
@@ -127,6 +130,11 @@ One side effect: the Windows microphone indicator flickers briefly on Alt+Tab, b
 - "Nowhere to type" only catches the desktop and taskbar. A paste into an app with no text box focused just does nothing, so use Copy last dictation from the tray.
 - The first dictation after launch can take up to a second for the mic to open. After that it's usually under 250 ms.
 - Pasted text shows up in Windows clipboard history (`Win+V`).
+- Right Alt does nothing while a window running as administrator is focused. Windows keeps normal apps from seeing keys typed into elevated windows.
+
+## When something doesn't work
+
+Tray icon, then Open log, opens `%APPDATA%\Utter\utter.log`. The first lines say which key it's listening on. Every press shows up there (`[key] RightAlt down`, `held`, `up after 1840 ms`), followed by the mic, transcription and polish steps, so you can see where it stops.
 
 ## License
 

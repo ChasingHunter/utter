@@ -1,8 +1,8 @@
 {
   "name": "utter",
   "productName": "Utter",
-  "version": "0.3.0",
-  "description": "Offline push-to-talk dictation for Windows. Hold Left Alt, talk, let go, and the text lands in whatever app you are typing in.",
+  "version": "0.3.1",
+  "description": "Offline push-to-talk dictation for Windows. Hold Right Alt, talk, let go, and the text lands in whatever app you are typing in.",
   "main": "./out/main.js",
   "license": "MIT",
   "private": true,

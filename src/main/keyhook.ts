@@ -1,6 +1,6 @@
 import koffi from 'koffi'
 
-// Low-level keyboard hook, so a single modifier (Left Alt) can be the talk key.
+// Low-level keyboard hook, so a single modifier (Right Alt) can be the talk key.
 // Electron's globalShortcut can't bind a lone modifier, and polling can't tell
 // "Alt held alone" from "Alt+Tab". The hook sees every key, in order, and never
 // blocks anything: all events are passed on untouched.
@@ -60,12 +60,15 @@ export function watchSoloKey(vk: number, holdMs: number, on: SoloKeyEvents): boo
   let downAt = 0
   let timer: NodeJS.Timeout | undefined
 
-  const handle = (wParam: number, info: { vkCode: number; flags: number }): void => {
+  const handle = (wParam: number, info: { vkCode: number; scanCode: number; flags: number }): void => {
     // Keys we inject ourselves (the paste, the mask key) must not count as the user's.
     if (process.env.UTTER_HOOK_TEST) {
       // Test mode counts injected keys, but only F23/F24 so real typing (or another app's injection) can't interfere.
       if (info.vkCode !== 0x86 && info.vkCode !== 0x87) return
     } else if (info.flags & LLKHF_INJECTED) return
+    // On layouts where Right Alt is AltGr, Windows adds a fake Left Ctrl (scan code 0x21D) to every
+    // Right Alt press, including auto-repeats. It isn't the user pressing Ctrl, so it's not a combo.
+    if (info.vkCode === 0xa2 && info.scanCode === 0x21d) return
     const isDown = wParam === WM_KEYDOWN || wParam === WM_SYSKEYDOWN
     if (info.vkCode === vk) {
       if (isDown) {
@@ -90,7 +93,7 @@ export function watchSoloKey(vk: number, holdMs: number, on: SoloKeyEvents): boo
   callback = koffi.register((nCode: number, wParam: number, lParam: unknown) => {
     if (nCode >= 0) {
       try {
-        handle(Number(wParam), koffi.decode(lParam, KBDLLHOOKSTRUCT) as { vkCode: number; flags: number })
+        handle(Number(wParam), koffi.decode(lParam, KBDLLHOOKSTRUCT) as { vkCode: number; scanCode: number; flags: number })
       } catch (err) {
         console.error('[keyhook]', err)
       }
