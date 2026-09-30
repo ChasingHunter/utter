@@ -36,8 +36,9 @@ body.on('data', (c) => {
 })
 await pipeline(body, createWriteStream(archive))
 console.log('\nUnpacking…')
-// Windows 10+ ships bsdtar, which handles .tar.bz2.
-execFileSync('tar', ['-xjf', archive, '-C', root])
+// Windows 10+ ships bsdtar, which handles .tar.bz2. Full path, because a plain "tar" can be Git's GNU tar,
+// which reads "C:\..." as a remote host and fails.
+execFileSync(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe'), ['-xjf', archive, '-C', root])
 rmSync(archive, { force: true })
 if (!FILES.every((f) => existsSync(join(dir, f)))) throw new Error('Model files missing after extraction')
 writeFileSync(join(dir, '.installed'), new Date().toISOString())
