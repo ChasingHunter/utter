@@ -26,7 +26,9 @@ const ownModelsDir = (): string => join(app.getPath('userData'), 'models')
 
 /** Where to look, in order: the configured folder, our own download, then Orbit's (same model, no second download). */
 function candidates(): string[] {
-  const list = [join(ownModelsDir(), MODEL.name), join(app.getPath('appData'), 'Orbit', 'models', MODEL.name)]
+  const list = [join(ownModelsDir(), MODEL.name)]
+  // UTTER_FRESH pretends Orbit isn't installed, to test a clean machine.
+  if (!process.env.UTTER_FRESH) list.push(join(app.getPath('appData'), 'Orbit', 'models', MODEL.name))
   return settings.modelDir ? [settings.modelDir, ...list] : list
 }
 

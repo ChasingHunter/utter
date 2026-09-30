@@ -17,8 +17,12 @@ export interface Settings {
   maxSeconds: number
   /** Folder holding the Parakeet model files. Empty = look in Utter's and Orbit's model folders. */
   modelDir: string
-  /** auto: clean up with Claude Haiku when an API key is set. off: paste exactly what was heard. */
-  polish: 'auto' | 'off'
+  /**
+   * Clean-up with Claude Haiku before pasting.
+   * auto: your Claude plan through Claude Code if it's installed, else an API key if set, else off.
+   * subscription / api: only that one. off: paste exactly what was heard.
+   */
+  polish: 'auto' | 'subscription' | 'api' | 'off'
   /** Anthropic API key for polishing. Empty = use the ANTHROPIC_API_KEY environment variable. */
   anthropicApiKey: string
   /** Give up on polishing after this long and paste the raw text. */
@@ -53,7 +57,7 @@ export function loadSettings(): string | undefined {
   try {
     const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<Settings>
     settings = { ...DEFAULTS, ...raw }
-    if (settings.polish !== 'auto' && settings.polish !== 'off') settings.polish = DEFAULTS.polish
+    if (!['auto', 'subscription', 'api', 'off'].includes(settings.polish)) settings.polish = DEFAULTS.polish
     if (!(settings.maxSeconds > 0)) settings.maxSeconds = DEFAULTS.maxSeconds
     if (!(settings.polishTimeoutMs > 0)) settings.polishTimeoutMs = DEFAULTS.polishTimeoutMs
   } catch (err) {

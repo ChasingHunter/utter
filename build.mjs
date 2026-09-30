@@ -12,7 +12,8 @@ const node = {
   format: 'cjs',
   target: 'node22',
   // Native addons must stay in node_modules next to their DLLs.
-  external: ['electron', 'sherpa-onnx-node', 'koffi'],
+  // The Agent SDK is ESM-only and launches Claude Code by path; load it at runtime, don't bundle it.
+  external: ['electron', 'sherpa-onnx-node', 'koffi', '@anthropic-ai/claude-agent-sdk'],
   logLevel: 'info'
 }
 

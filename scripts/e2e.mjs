@@ -2,6 +2,7 @@
 // we drive dictation through a test hook, and check the transcript. Never pastes and never
 // touches the clipboard. Screenshots of the pill land in out/e2e/.
 // Run: npm run test:e2e [path.wav]
+// UTTER_FRESH=1 ignores Orbit's copy of the model and downloads it the way a new install would (482 MB).
 import { _electron as electron } from 'playwright'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -27,7 +28,8 @@ const app = await electron.launch({
     ...(exe ? [] : [join(root, 'out', 'main.js')])
   ],
   // A deliberately bad key: polishing must fail quietly and fall back to the raw transcript.
-  env: { ...process.env, UTTER_E2E: '1', UTTER_DATA_DIR: dataDir, ANTHROPIC_API_KEY: 'sk-ant-e2e-invalid' }
+  env: { ...process.env, UTTER_E2E: '1', UTTER_DATA_DIR: dataDir, ANTHROPIC_API_KEY: 'sk-ant-e2e-invalid' },
+  timeout: 60_000
 })
 const logs = []
 app.process().stdout.on('data', (d) => {
@@ -54,7 +56,15 @@ let failed = false
 try {
   await until(() => app.evaluate(() => !!globalThis.__utter), 15_000)
   const pill = await app.firstWindow()
+  if (!(await call('hasModel'))) {
+    console.log('no speech model yet: downloading it like a fresh install would…')
+    const t = Date.now()
+    await call('downloadModel')
+    console.log(`model installed in ${((Date.now() - t) / 1000).toFixed(0)} s`)
+  }
   await call('warmUp')
+  // Scenarios 1-4 use the API engine with a bad key, so polishing must fail and fall back.
+  if ((await call('setPolish', 'api')) !== 'api') throw new Error('api polish engine not selected')
 
   // 1. Hold-to-talk into a normal app: text comes back (polish fails on the bad key and falls back).
   await call('setTarget', { app: 'notepad.exe', title: 'Untitled - Notepad', className: 'Notepad' })
@@ -96,6 +106,23 @@ try {
   await call('begin')
   await call('stop')
   if ((await call('state')) !== 'idle') throw new Error('not idle after instant stop')
+
+  // 5. Polishing through your Claude plan (only if Claude Code is installed). Real Haiku calls.
+  let engine = null
+  for (let i = 0; i < 50 && engine !== 'subscription'; i++) {
+    engine = await call('setPolish', 'subscription')
+    if (engine !== 'subscription') await wait(100)
+  }
+  if (engine === 'subscription') {
+    await call('prepare')
+    const target = { app: 'slack.exe', title: 'general | Acme - Slack', className: 'Chrome_WidgetWin_1' }
+    for (const raw of ['um so can you like send me the uh deck before three no wait four', 'okay so first the budget second hiring and third the launch date']) {
+      const t = Date.now()
+      const out = await call('polish', { raw, target })
+      console.log(`polish via subscription ${Date.now() - t} ms: ${JSON.stringify(out)}`)
+      if (!out || out === raw) throw new Error('subscription polish returned nothing new')
+    }
+  } else console.log('skipped subscription polish: Claude Code not found')
 
   console.log(`e2e passed (screenshots in ${shots})`)
 } catch (err) {

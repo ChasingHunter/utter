@@ -15,9 +15,12 @@
     "icon": "node scripts/make-icon.mjs",
     "test:e2e": "node build.mjs && node scripts/e2e.mjs",
     "test:hook": "esbuild scripts/hook-test.ts --bundle --platform=node --format=cjs --external:electron --external:koffi --outfile=out/hook-test.js --log-level=warning && node scripts/run-hook-test.mjs",
-    "dist": "node scripts/make-icon.mjs && node build.mjs && electron-builder --win --publish never"
+    "dist": "node scripts/make-icon.mjs && node build.mjs && electron-builder --win --publish never",
+    "postinstall": "node scripts/ensure-electron.mjs",
+    "model": "node scripts/download-model.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.285",
     "@anthropic-ai/sdk": "0.129.0",
     "koffi": "3.3.2",
     "sherpa-onnx-node": "1.13.8"
@@ -39,7 +42,10 @@
     },
     "files": [
       "out/**",
-      "package.json"
+      "package.json",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk-win32-*/**",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk-linux-*/**",
+      "!**/node_modules/@anthropic-ai/claude-agent-sdk-darwin-*/**"
     ],
     "asarUnpack": [
       "**/node_modules/sherpa-onnx-node/**",

@@ -4,8 +4,8 @@ import type { PillCommand } from '../preload'
 import { trayIcon, type IconState } from './icon'
 import { SOLO_KEYS, unwatch, watchSoloKey } from './keyhook'
 import { pasteInto } from './paste'
-import { polish, polishAvailable } from './polish'
-import { loadSettings, saveSettings, settings, settingsPath } from './settings'
+import { findClaude, polish, polishEngine, prepare, shutdown as shutdownPolish } from './polish'
+import { loadSettings, saveSettings, settings, settingsPath, type Settings } from './settings'
 import { findModel, installModel, MODEL, transcribe, warmUp } from './stt'
 import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, sendMaskKey, windowInfo, type Hwnd, type WindowInfo } from './win32'
 
@@ -123,6 +123,7 @@ function begin(): boolean {
   if (state !== 'idle') return false
   if (!findModel()) return false
   target = foregroundWindow()
+  prepare()
   targetInfo = testTarget ?? windowInfo(target)
   handsFree = false
   cardOpen = false
@@ -166,7 +167,7 @@ async function stop(): Promise<void> {
       return
     }
     let text = raw
-    if (polishAvailable()) {
+    if (polishEngine()) {
       text = await polish(raw, targetInfo).catch((err) => {
         console.warn('[utter] polish failed, using raw text:', err instanceof Error ? err.message : err)
         return raw
@@ -358,16 +359,24 @@ function refreshTray(): void {
     tray.setToolTip(`Utter: ${status}`)
   }
   const how = SOLO_KEYS[settings.hotkey] ? `Hold ${keyLabel()} to talk, double-tap for hands-free` : `Hold ${keyLabel()} to talk, or tap to start and stop`
-  const hasKey = !!(settings.anthropicApiKey || process.env.ANTHROPIC_API_KEY)
+  const engine = polishEngine()
+  const canPolish = settings.polish === 'off' ? true : !!engine
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: how, enabled: false },
       { type: 'separator' },
       {
-        label: hasKey ? 'Polish with Claude Haiku' : 'Polish with Claude Haiku (add an API key in settings)',
+        label:
+          engine === 'subscription'
+            ? 'Polish with Claude Haiku (your Claude plan)'
+            : engine === 'api'
+              ? 'Polish with Claude Haiku (API key)'
+              : canPolish
+                ? 'Polish with Claude Haiku'
+                : 'Polish with Claude Haiku (needs Claude Code or an API key)',
         type: 'checkbox',
-        checked: polishAvailable(),
-        enabled: hasKey,
+        checked: !!engine,
+        enabled: canPolish,
         click: (item) => {
           saveSettings({ polish: item.checked ? 'auto' : 'off' })
           refreshTray()
@@ -436,6 +445,8 @@ app.whenReady().then(async () => {
   tray.on('click', () => tray?.popUpContextMenu())
   refreshTray()
   bindHotkey()
+  // Looking for Claude Code runs where.exe; the tray is already up, so update it when that's done.
+  void findClaude().then(refreshTray)
 
   if (findModel()) {
     // There's no window, so say hello once the pill can draw; otherwise launching looks like nothing happened.
@@ -456,7 +467,17 @@ app.whenReady().then(async () => {
         cardOpen: () => cardOpen,
         pill: () => pill,
         /** Pretend the dictation started over this kind of window. */
-        setTarget: (info: WindowInfo) => (testTarget = info)
+        setTarget: (info: WindowInfo) => (testTarget = info),
+        hasModel: () => !!findModel(),
+        downloadModel: () =>
+          installModel((f, phase) => phase === 'download' && Math.round(f * 100) % 10 === 0 && console.log(`[utter] model ${Math.round(f * 100)}%`)),
+        /** Switch polishing for this run only (not saved). */
+        setPolish: (mode: Settings['polish']) => {
+          settings.polish = mode
+          return polishEngine() ?? null
+        },
+        polish: ({ raw, target }: { raw: string; target: WindowInfo }) => polish(raw, target),
+        prepare
       }
     })
   }
@@ -467,5 +488,6 @@ app.on('second-instance', () => flash('info', `Already running. Hold ${keyLabel(
 app.on('window-all-closed', () => {})
 app.on('will-quit', () => {
   unwatch()
+  shutdownPolish()
   globalShortcut.unregisterAll()
 })
