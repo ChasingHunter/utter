@@ -38,7 +38,7 @@ export function findModel(): string | undefined {
 
 let installing: Promise<void> | undefined
 
-/** Downloads and unpacks the model into Dictate's data folder. `onProgress` gets 0..1 while downloading. */
+/** Downloads and unpacks the model into Utter's data folder. `onProgress` gets 0..1 while downloading. */
 export function installModel(onProgress: (fraction: number, phase: 'download' | 'unpack') => void): Promise<void> {
   installing ??= (async () => {
     const dir = ownModelsDir()

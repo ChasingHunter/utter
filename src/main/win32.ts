@@ -29,6 +29,15 @@ const MapVirtualKeyW = user32.func('uint32 __stdcall MapVirtualKeyW(uint32 uCode
 const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int vKey)')
 const GetForegroundWindow = user32.func('void * __stdcall GetForegroundWindow()')
 const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(void *hWnd)')
+const GetWindowTextW = user32.func('int __stdcall GetWindowTextW(void *hWnd, _Out_ char16_t *lpString, int nMaxCount)')
+const GetClassNameW = user32.func('int __stdcall GetClassNameW(void *hWnd, _Out_ char16_t *lpClassName, int nMaxCount)')
+const GetWindowThreadProcessId = user32.func('uint32 __stdcall GetWindowThreadProcessId(void *hWnd, _Out_ uint32 *pid)')
+const kernel32 = koffi.load('kernel32.dll')
+const OpenProcess = kernel32.func('void * __stdcall OpenProcess(uint32 access, bool inherit, uint32 pid)')
+const CloseHandle = kernel32.func('bool __stdcall CloseHandle(void *h)')
+const QueryFullProcessImageNameW = kernel32.func(
+  'bool __stdcall QueryFullProcessImageNameW(void *h, uint32 flags, _Out_ char16_t *name, _Inout_ uint32 *size)'
+)
 
 const KEYEVENTF_EXTENDEDKEY = 0x1
 const KEYEVENTF_KEYUP = 0x2
@@ -90,6 +99,45 @@ export function foregroundWindow(): Hwnd {
 
 export function focusWindow(hwnd: Hwnd): boolean {
   return hwnd ? SetForegroundWindow(hwnd) : false
+}
+
+export interface WindowInfo {
+  /** Executable name, e.g. "slack.exe". */
+  app: string
+  title: string
+  className: string
+}
+
+export function windowInfo(hwnd: Hwnd): WindowInfo {
+  if (!hwnd) return { app: '', title: '', className: '' }
+  const buf = Buffer.alloc(1024)
+  const title = buf.toString('utf16le', 0, GetWindowTextW(hwnd, buf, 512) * 2)
+  const cls = Buffer.alloc(512)
+  const className = cls.toString('utf16le', 0, GetClassNameW(hwnd, cls, 256) * 2)
+  const pid = [0]
+  GetWindowThreadProcessId(hwnd, pid)
+  let app = ''
+  const h = OpenProcess(0x1000 /* PROCESS_QUERY_LIMITED_INFORMATION */, false, pid[0])
+  if (h) {
+    const name = Buffer.alloc(1040)
+    const size = [520]
+    if (QueryFullProcessImageNameW(h, 0, name, size)) app = name.toString('utf16le', 0, size[0] * 2).split('\\').pop() ?? ''
+    CloseHandle(h)
+  }
+  return { app, title, className }
+}
+
+// The desktop and taskbar: nothing to type into, so dictation goes to the clipboard instead.
+const NO_TEXT_CLASSES = new Set(['Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd', 'NotifyIconOverflowWindow', 'TopLevelWindowForOverflowXamlIsland'])
+
+export function hasTextTarget(info: WindowInfo): boolean {
+  return !!info.className && !NO_TEXT_CLASSES.has(info.className)
+}
+
+/** An unassigned virtual key. Tapping it while Alt/Win is held stops Windows treating the release as "Alt pressed alone" (menu bar) or "Win alone" (Start). */
+export function sendMaskKey(): void {
+  sendKeys([0xe8], false)
+  sendKeys([0xe8], true)
 }
 
 /** koffi hands back a fresh pointer object per call, so compare addresses. */

@@ -1,5 +1,6 @@
 // End-to-end without touching your desktop: Chromium's fake mic plays a WAV into the pill,
-// we start/stop dictation through a test hook, and check the transcript. Paste is skipped in test mode.
+// we drive dictation through a test hook, and check the transcript. Never pastes and never
+// touches the clipboard. Screenshots of the pill land in out/e2e/.
 // Run: npm run test:e2e [path.wav]
 import { _electron as electron } from 'playwright'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
@@ -10,59 +11,93 @@ const wav = resolve(process.argv[2] ?? join(root, 'test', 'fixtures', 'speech0.w
 // Chromium plays silence for a missing file instead of failing, so check up front.
 if (!existsSync(wav)) throw new Error(`Missing audio fixture: ${wav}`)
 const dataDir = join(root, 'out', 'e2e-profile')
+const shots = join(root, 'out', 'e2e')
 rmSync(dataDir, { recursive: true, force: true })
 mkdirSync(dataDir, { recursive: true })
+mkdirSync(shots, { recursive: true })
 
+// UTTER_EXE=dist/win-unpacked/Utter.exe tests the packaged app instead of the dev build.
+const exe = process.env.UTTER_EXE ? resolve(process.env.UTTER_EXE) : undefined
 const app = await electron.launch({
+  executablePath: exe,
   args: [
     '--use-fake-ui-for-media-stream',
     '--use-fake-device-for-media-stream',
     `--use-file-for-fake-audio-capture=${wav}`,
-    join(root, 'out', 'main.js')
+    ...(exe ? [] : [join(root, 'out', 'main.js')])
   ],
-  env: { ...process.env, DICTATE_E2E: '1', DICTATE_DATA_DIR: dataDir }
+  // A deliberately bad key: polishing must fail quietly and fall back to the raw transcript.
+  env: { ...process.env, UTTER_E2E: '1', UTTER_DATA_DIR: dataDir, ANTHROPIC_API_KEY: 'sk-ant-e2e-invalid' }
 })
-app.process().stdout.on('data', (d) => process.stdout.write(`  [app] ${d}`))
-app.process().stderr.on('data', (d) => process.stderr.write(`  [app] ${d}`))
+const logs = []
+app.process().stdout.on('data', (d) => {
+  logs.push(String(d))
+  process.stdout.write(`  [app] ${d}`)
+})
+app.process().stderr.on('data', (d) => {
+  logs.push(String(d))
+  process.stderr.write(`  [app] ${d}`)
+})
 
-const call = (name) => app.evaluate((_e, n) => globalThis.__dictate[n](), name)
+const call = (name, arg) => app.evaluate((_e, [n, a]) => globalThis.__utter[n](a), [name, arg])
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const until = async (fn, ms) => {
   const end = Date.now() + ms
   while (Date.now() < end) {
     if (await fn()) return
-    await new Promise((r) => setTimeout(r, 100))
+    await wait(100)
   }
   throw new Error('timed out')
 }
 
 let failed = false
 try {
-  await until(() => app.evaluate(() => !!globalThis.__dictate), 15_000)
+  await until(() => app.evaluate(() => !!globalThis.__utter), 15_000)
+  const pill = await app.firstWindow()
   await call('warmUp')
 
-  // 1. A normal dictation comes back as text.
-  await call('start')
-  await new Promise((r) => setTimeout(r, 7000)) // let the WAV play into the fake mic
+  // 1. Hold-to-talk into a normal app: text comes back (polish fails on the bad key and falls back).
+  await call('setTarget', { app: 'notepad.exe', title: 'Untitled - Notepad', className: 'Notepad' })
+  await call('begin')
+  await call('reveal')
+  await wait(3000)
+  await pill.screenshot({ path: join(shots, '1-listening.png') })
+  await wait(4000)
   const t0 = Date.now()
-  await call('stop')
+  const stopping = call('stop')
+  await wait(150)
+  await pill.screenshot({ path: join(shots, '2-thinking.png') })
+  await stopping
   const text = await call('last')
   console.log(`transcript (${Date.now() - t0} ms after stop): ${JSON.stringify(text)}`)
-  if (!text) throw new Error('empty transcript')
+  if (!/investor call/i.test(text)) throw new Error(`unexpected transcript: ${text}`)
+  if (!logs.join('').includes('polish failed')) throw new Error('polish was not attempted with the (bad) key')
   if ((await call('state')) !== 'idle') throw new Error('not idle after stop')
 
-  // 2. Cancel returns to idle without producing text.
-  await call('start')
-  await new Promise((r) => setTimeout(r, 1000))
+  // 2. Nowhere to type (desktop): the copy card shows instead of pasting.
+  await call('setTarget', { app: 'explorer.exe', title: '', className: 'Progman' })
+  await call('begin')
+  await call('reveal')
+  await wait(4000)
+  await call('stop')
+  if (!(await call('cardOpen'))) throw new Error('copy card did not open for a desktop target')
+  await wait(400)
+  await pill.screenshot({ path: join(shots, '3-card.png') })
+
+  // 3. Cancel returns to idle without producing text, and closes the card.
+  const before = await call('last')
+  await call('begin')
+  await wait(1000)
   await call('cancel')
   if ((await call('state')) !== 'idle') throw new Error('not idle after cancel')
-  if ((await call('last')) !== text) throw new Error('cancel changed the transcript')
+  if ((await call('last')) !== before) throw new Error('cancel changed the transcript')
 
-  // 3. An instant tap (stop right after start) must not leave the mic open or hang.
-  await call('start')
+  // 4. An instant tap (stop right after start) must not leave the mic open or hang.
+  await call('begin')
   await call('stop')
   if ((await call('state')) !== 'idle') throw new Error('not idle after instant stop')
 
-  console.log('e2e passed')
+  console.log(`e2e passed (screenshots in ${shots})`)
 } catch (err) {
   failed = true
   console.error('e2e FAILED:', err)

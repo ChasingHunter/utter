@@ -1,17 +1,17 @@
 // Offline STT check without the app: transcribe WAVs with the Parakeet model, print speed + text.
 // Run: node scripts/stt-bench.mjs test/fixtures/*.wav
-// Model folder: $DICTATE_MODEL_DIR, else Dictate's, else Orbit's.
+// Model folder: $UTTER_MODEL_DIR, else Utter's, else Orbit's.
 import sherpa from 'sherpa-onnx-node'
 import { existsSync } from 'node:fs'
 import { cpus } from 'node:os'
 import { join } from 'node:path'
 
 const NAME = 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8'
-const dir = [process.env.DICTATE_MODEL_DIR, join(process.env.APPDATA, 'Dictate', 'models', NAME), join(process.env.APPDATA, 'Orbit', 'models', NAME)]
+const dir = [process.env.UTTER_MODEL_DIR, join(process.env.APPDATA, 'Utter', 'models', NAME), join(process.env.APPDATA, 'Orbit', 'models', NAME)]
   .filter(Boolean)
   .find((d) => existsSync(join(d, 'tokens.txt')))
 if (!dir) {
-  console.error('No speech model found. Start the app once to download it, or set DICTATE_MODEL_DIR.')
+  console.error('No speech model found. Start the app once to download it, or set UTTER_MODEL_DIR.')
   process.exit(1)
 }
 const files = process.argv.slice(2)

@@ -1,4 +1,4 @@
-// Minimal typings for the sherpa-onnx-node APIs Dictate uses (package ships none).
+// Minimal typings for the sherpa-onnx-node APIs Utter uses (package ships none).
 declare module 'sherpa-onnx-node' {
   export interface OfflineStream {
     acceptWaveform(wave: { sampleRate: number; samples: Float32Array }): void

@@ -9,8 +9,8 @@ export class Recorder {
   private node: ScriptProcessorNode | undefined
   private chunks: Float32Array[] = []
   private starting: Promise<void> | undefined
-  /** 0..1 input level, for the meter. */
-  level = 0
+  private analyser: AnalyserNode | undefined
+  private frame = new Float32Array(512)
 
   /**
    * Opens and closes the mic once. The first open in a process spins up Chromium's audio
@@ -35,17 +35,27 @@ export class Recorder {
     })
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
     const source = this.ctx.createMediaStreamSource(this.stream)
+    // Separate tap for the waveform: read every animation frame, so it moves smoothly
+    // even though the recording buffers below arrive only every 256 ms.
+    this.analyser = this.ctx.createAnalyser()
+    this.analyser.fftSize = 512
+    source.connect(this.analyser)
     // ScriptProcessor is deprecated but needs no extra module file (CSP-friendly) and is plenty for mono 16 kHz.
     this.node = this.ctx.createScriptProcessor(4096, 1, 1)
     this.node.onaudioprocess = (e) => {
-      const data = e.inputBuffer.getChannelData(0)
-      this.chunks.push(new Float32Array(data))
-      let peak = 0
-      for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]))
-      this.level = Math.min(1, peak * 2)
+      this.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))
     }
     source.connect(this.node)
     this.node.connect(this.ctx.destination)
+  }
+
+  /** Loudness right now, 0..1 (RMS, eased so normal speech fills most of the range). */
+  level(): number {
+    if (!this.analyser) return 0
+    this.analyser.getFloatTimeDomainData(this.frame)
+    let sum = 0
+    for (const v of this.frame) sum += v * v
+    return Math.min(1, Math.sqrt(Math.sqrt(sum / this.frame.length) * 7))
   }
 
   /** Stops recording and returns everything captured. Waits for a start still in progress so the mic never stays open. */
@@ -59,7 +69,7 @@ export class Recorder {
     this.ctx = undefined
     this.node = undefined
     this.stream = undefined
-    this.level = 0
+    this.analyser = undefined
     const out = new Float32Array(chunks.reduce((n, c) => n + c.length, 0))
     let offset = 0
     for (const c of chunks) {
