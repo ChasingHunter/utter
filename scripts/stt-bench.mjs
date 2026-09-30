@@ -11,7 +11,7 @@ const dir = [process.env.UTTER_MODEL_DIR, join(process.env.APPDATA, 'Utter', 'mo
   .filter(Boolean)
   .find((d) => existsSync(join(d, 'tokens.txt')))
 if (!dir) {
-  console.error('No speech model found. Start the app once to download it, or set UTTER_MODEL_DIR.')
+  console.error('No speech model found. Run `npm run model` to download it, or set UTTER_MODEL_DIR.')
   process.exit(1)
 }
 const files = process.argv.slice(2)

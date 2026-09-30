@@ -32,8 +32,8 @@ Utter can send the transcript to Claude Haiku before pasting, along with the app
 
 It reaches Haiku one of two ways, picked automatically:
 
-1. **Your Claude plan**, through the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) you already have installed and logged in. Nothing to configure. The first clean-up takes about 1.5 seconds (Claude Code starting up, which begins the moment you press Alt, so most of it overlaps your talking), then about 0.8 seconds each. Claude Code quits after 10 idle minutes. This uses your plan's normal usage limits, under Anthropic's terms for it.
-2. **An API key**, if Claude Code isn't installed: put it in settings (`anthropicApiKey`) or set `ANTHROPIC_API_KEY`. About 0.5 seconds, roughly a dollar per thousand dictations.
+1. Your Claude plan, through the [Claude Code](https://docs.anthropic.com/en/docs/claude-code) you already have installed. Nothing to configure in Utter, but Claude Code has to be logged in: if you've never used it, run `claude` once in a terminal and follow the login. The first clean-up takes about 1.5 seconds (Claude Code starting up, which begins the moment you press Alt, so most of it overlaps your talking), then about 0.8 seconds each. Claude Code quits after 10 idle minutes. This uses your plan's normal usage limits, under Anthropic's terms for it.
+2. An API key, if Claude Code isn't installed: put it in settings (`anthropicApiKey`) or set `ANTHROPIC_API_KEY`. About 0.5 seconds, roughly a dollar per thousand dictations.
 
 If neither is available, or a call fails or takes longer than 5 seconds, the raw transcript is pasted. Turn polishing off from the tray menu.
 
