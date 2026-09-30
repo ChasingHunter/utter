@@ -1,0 +1,50 @@
+{
+  "name": "dictate",
+  "productName": "Dictate",
+  "version": "0.1.0",
+  "description": "Offline push-to-talk dictation for Windows. Talk, let go, and the text lands in whatever app you're typing in.",
+  "main": "./out/main.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "bench": "node scripts/stt-bench.mjs",
+    "test:e2e": "node build.mjs && node scripts/e2e.mjs",
+    "dist": "node build.mjs && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "koffi": "3.3.2",
+    "sherpa-onnx-node": "1.13.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "playwright": "1.63.0",
+    "typescript": "7.0.2"
+  },
+  "build": {
+    "appId": "dev.dictate.desktop",
+    "productName": "Dictate",
+    "directories": { "output": "dist" },
+    "files": ["out/**", "package.json"],
+    "asarUnpack": [
+      "**/node_modules/sherpa-onnx-node/**",
+      "**/node_modules/sherpa-onnx-win-x64/**",
+      "**/node_modules/koffi/**",
+      "**/node_modules/@koromix/**"
+    ],
+    "npmRebuild": false,
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }] },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "createDesktopShortcut": false,
+      "artifactName": "Dictate-Setup-${version}.${ext}"
+    }
+  }
+}
