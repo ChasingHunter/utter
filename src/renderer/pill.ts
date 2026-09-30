@@ -19,7 +19,7 @@ const recorder = new Recorder()
 let startedAt = 0
 let frame = 0
 
-function setState(state: 'opening' | 'recording' | 'busy' | 'error', text: string): void {
+function setState(state: 'opening' | 'recording' | 'busy' | 'error' | 'info', text: string): void {
   pill.className = state
   label.textContent = text
   if (state !== 'recording') time.textContent = ''

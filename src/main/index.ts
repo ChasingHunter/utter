@@ -9,12 +9,14 @@ import { acceleratorKey, foregroundWindow, isKeyDown, type Hwnd } from './win32'
 
 const E2E = !!process.env.DICTATE_E2E
 if (process.env.DICTATE_DATA_DIR) app.setPath('userData', process.env.DICTATE_DATA_DIR)
+// Windows drops toast notifications from apps without an ID; unpackaged, the exe path is the ID that works.
+app.setAppUserModelId(app.isPackaged ? 'dev.dictate.desktop' : process.execPath)
 
 if (!E2E && !app.requestSingleInstanceLock()) app.quit()
 
 // A tap shorter than this starts dictation and leaves it running (toggle); longer is hold-to-talk.
 const HOLD_MS = 350
-const PILL = { width: 220, height: 48 }
+const PILL = { width: 380, height: 48 }
 
 type State = 'idle' | 'recording' | 'transcribing'
 let state: State = 'idle'
@@ -62,6 +64,19 @@ function showPill(): void {
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   pill.setBounds({ x: Math.round(workArea.x + (workArea.width - PILL.width) / 2), y: workArea.y + workArea.height - PILL.height - 48, ...PILL })
   pill.showInactive()
+}
+
+/** "Control+Shift+Space" → "Ctrl+Shift+Space", the way Windows labels it. */
+const keyLabel = (): string => settings.hotkey.replace(/\b(Command|Cmd)OrControl\b|\bControl\b/g, 'Ctrl')
+
+/** Shows a short message in the pill while idle. */
+function flash(text: string, ms = 3500): void {
+  if (state !== 'idle') return
+  showPill()
+  send({ type: 'status', state: 'info', text })
+  setTimeout(() => {
+    if (state === 'idle') pill?.hide()
+  }, ms)
 }
 
 function setState(next: State): void {
@@ -260,8 +275,11 @@ app.whenReady().then(async () => {
   refreshTray()
   bindHotkey()
 
-  if (findModel()) warmUp().catch((err) => notify(`Couldn't load the speech model: ${err instanceof Error ? err.message : err}`))
-  else if (!E2E) offerModelDownload()
+  if (findModel()) {
+    // There's no window, so say hello once the pill can draw; otherwise launching looks like nothing happened.
+    if (!E2E) pill.webContents.once('did-finish-load', () => flash(`Ready. Hold ${keyLabel()} and talk`))
+    warmUp().catch((err) => notify(`Couldn't load the speech model: ${err instanceof Error ? err.message : err}`))
+  } else if (!E2E) offerModelDownload()
 
   if (E2E) {
     Object.assign(globalThis, {
@@ -270,7 +288,7 @@ app.whenReady().then(async () => {
   }
 })
 
-app.on('second-instance', () => notify(`Already running. Hold ${settings.hotkey} and talk.`))
+app.on('second-instance', () => flash(`Already running. Hold ${keyLabel()} to talk`))
 // Tray app: closing the pill must not quit.
 app.on('window-all-closed', () => {})
 app.on('will-quit', () => globalShortcut.unregisterAll())

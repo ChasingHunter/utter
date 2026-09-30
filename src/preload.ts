@@ -4,7 +4,7 @@ export type PillCommand =
   | { type: 'start' }
   | { type: 'stop' }
   | { type: 'cancel' }
-  | { type: 'status'; state: 'busy' | 'error'; text: string }
+  | { type: 'status'; state: 'busy' | 'error' | 'info'; text: string }
 
 const api = {
   onCommand(cb: (cmd: PillCommand) => void): void {

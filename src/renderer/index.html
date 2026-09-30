@@ -13,10 +13,16 @@
         user-select: none;
         font: 500 13px/1 'Segoe UI Variable Text', 'Segoe UI', sans-serif;
       }
+      body {
+        display: flex;
+        justify-content: center;
+      }
       #pill {
         box-sizing: border-box;
         height: 40px;
+        min-width: 180px;
         margin: 4px;
+        white-space: nowrap;
         padding: 0 16px 0 12px;
         display: flex;
         align-items: center;
@@ -36,6 +42,9 @@
       #pill.busy #dot {
         background: #f59e0b;
         animation: pulse 0.9s ease-in-out infinite;
+      }
+      #pill.info #dot {
+        background: #22c55e;
       }
       #pill.error #dot,
       #pill.opening #dot {
