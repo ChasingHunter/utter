@@ -69,6 +69,7 @@ Tray icon, then Edit settings, opens `%APPDATA%\Utter\settings.json`. After edit
 npm run bench -- test/fixtures/speech0.wav   # speech-to-text alone: speed and transcript
 npm run test:e2e                             # the whole app, with a fake mic playing a WAV
 npm run test:hook                            # the keyboard hook
+npm run test:keys                            # real key presses and mic, screenshots of the pill
 ```
 
 None of them paste anything or touch your clipboard. Set `UTTER_FRESH=1` on the e2e test to ignore Orbit's model and test a clean machine.
