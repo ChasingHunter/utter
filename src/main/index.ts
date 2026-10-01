@@ -12,6 +12,8 @@ import { findModel, installModel, MODEL, removeStaleDownload, warmUp } from './s
 import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, windowInfo, type Hwnd, type WindowInfo } from './win32'
 
 const E2E = !!process.env.UTTER_E2E
+/** Never paste or touch the clipboard: tests run on a real desktop. UTTER_DRY_RUN does only this, keeping the real keyboard hook. */
+const DRY = E2E || !!process.env.UTTER_DRY_RUN
 if (process.env.UTTER_DATA_DIR) app.setPath('userData', process.env.UTTER_DATA_DIR)
 startFileLog()
 // Windows drops toast notifications from apps without an ID; unpackaged, the exe path is the ID that works.
@@ -222,7 +224,7 @@ async function stop(): Promise<void> {
     }
     hidePill()
     // Tests run on a real desktop: never paste there.
-    if (!E2E) {
+    if (!DRY) {
       try {
         await pasteInto(target, settings.trailingSpace ? `${text} ` : text, settings.restoreClipboard)
       } catch (err) {
@@ -243,7 +245,7 @@ async function stop(): Promise<void> {
 /** Puts the text on the clipboard and shows the card with a Copy button. */
 async function showCopyCard(text: string, note: string): Promise<void> {
   // Tests run on a real desktop, so they never touch the clipboard.
-  if (!E2E) await clipboard.writeText(text).catch((err) => console.error('[utter] clipboard write failed:', err))
+  if (!DRY) await clipboard.writeText(text).catch((err) => console.error('[utter] clipboard write failed:', err))
   cardOpen = true
   setState('idle')
   showPill()

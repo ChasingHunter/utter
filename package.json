@@ -1,7 +1,7 @@
 {
   "name": "utter",
   "productName": "Utter",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Offline push-to-talk dictation for Windows. Hold Right Alt, talk, let go, and the text lands in whatever app you are typing in.",
   "main": "./out/main.js",
   "license": "MIT",
@@ -17,7 +17,8 @@
     "test:hook": "esbuild scripts/hook-test.ts --bundle --platform=node --format=cjs --external:electron --external:koffi --outfile=out/hook-test.js --log-level=warning && node scripts/run-hook-test.mjs",
     "dist": "node scripts/make-icon.mjs && node build.mjs && electron-builder --win --publish never",
     "postinstall": "node scripts/ensure-electron.mjs",
-    "model": "node scripts/download-model.mjs"
+    "model": "node scripts/download-model.mjs",
+    "test:keys": "node build.mjs && node scripts/real-key-test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.285",
