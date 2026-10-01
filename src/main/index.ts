@@ -1,15 +1,15 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, Notification, screen, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, Notification, powerMonitor, screen, session, shell, Tray } from 'electron'
 import { join } from 'node:path'
 import type { PillCommand } from '../preload'
 import { trayIcon, type IconState } from './icon'
-import { SOLO_KEYS, unwatch, watchSoloKey } from './keyhook'
+import { keyHeld, SOLO_KEYS, unwatch, watchSoloKey } from './keyhook'
 import { logPath, preview, startFileLog } from './log'
 import { pasteInto } from './paste'
 import { findClaude, polish, polishEngine, prepare, shutdown as shutdownPolish } from './polish'
 import { loadSettings, saveSettings, settings, settingsPath, type Settings } from './settings'
 import { LiveTranscriber } from './live'
 import { findModel, installModel, MODEL, removeStaleDownload, warmUp } from './stt'
-import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, sendMaskKey, windowInfo, type Hwnd, type WindowInfo } from './win32'
+import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, windowInfo, type Hwnd, type WindowInfo } from './win32'
 
 const E2E = !!process.env.UTTER_E2E
 if (process.env.UTTER_DATA_DIR) app.setPath('userData', process.env.UTTER_DATA_DIR)
@@ -239,8 +239,6 @@ async function cancel(): Promise<void> {
 
 // ---- the talk key -----------------------------------------------------------
 
-const isAltKey = (): boolean => settings.hotkey === 'LeftAlt' || settings.hotkey === 'RightAlt'
-
 /** After a quick tap the recording keeps going this long, in case a second tap makes it hands-free. */
 let tapTimer: NodeJS.Timeout | undefined
 /** The current press is the second of a double-tap. */
@@ -268,7 +266,6 @@ const soloKey = {
     console.log(`[key] ${settings.hotkey} down (${state}${handsFree ? ', hands-free' : ''})`)
     if (state === 'recording' && handsFree) {
       stopOnRelease = true
-      if (isAltKey()) sendMaskKey()
       return
     }
     if (state === 'recording' && tapTimer) {
@@ -288,8 +285,6 @@ const soloKey = {
     }
     if (state !== 'recording' || handsFree) return
     reveal()
-    // Without this, letting go of Alt would open the menu bar in the app you're typing in.
-    if (isAltKey()) sendMaskKey()
   },
   release(heldMs: number, solo: boolean): void {
     console.log(`[key] up after ${heldMs} ms${solo ? '' : ' (was a combo)'} (${state})`)
@@ -368,6 +363,16 @@ function bindHotkey(): void {
   }
   console.log(`[utter] talk key ${settings.hotkey}: ${ok ? 'listening' : 'FAILED to bind'}`)
   if (!ok) notify(`Couldn't use ${settings.hotkey} as the talk key. Change "hotkey" in settings.json.`)
+}
+
+/**
+ * Windows silently drops a low-level hook that's too slow to answer even once in a while, and
+ * the talk key would then do nothing until a restart. Re-attaching now and then (and after sleep
+ * or unlock) costs nothing, and is skipped mid-press or mid-dictation.
+ */
+function rehook(): void {
+  if (E2E || !SOLO_KEYS[settings.hotkey] || state !== 'idle' || keyHeld()) return
+  watchSoloKey(SOLO_KEYS[settings.hotkey], HOLD_MS, soloKey)
 }
 
 // ---- model download ---------------------------------------------------------
@@ -510,6 +515,9 @@ app.whenReady().then(async () => {
   tray.on('click', () => tray?.popUpContextMenu())
   refreshTray()
   bindHotkey()
+  setInterval(rehook, 5 * 60_000)
+  powerMonitor.on('resume', rehook)
+  powerMonitor.on('unlock-screen', rehook)
   // Looking for Claude Code runs where.exe; the tray is already up, so update it when that's done.
   void findClaude().then(refreshTray)
 

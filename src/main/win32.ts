@@ -134,12 +134,6 @@ export function hasTextTarget(info: WindowInfo): boolean {
   return !!info.className && !NO_TEXT_CLASSES.has(info.className)
 }
 
-/** An unassigned virtual key. Tapping it while Alt/Win is held stops Windows treating the release as "Alt pressed alone" (menu bar) or "Win alone" (Start). */
-export function sendMaskKey(): void {
-  sendKeys([0xe8], false)
-  sendKeys([0xe8], true)
-}
-
 /** koffi hands back a fresh pointer object per call, so compare addresses. */
 export function sameWindow(a: Hwnd, b: Hwnd): boolean {
   return !!a && !!b && koffi.address(a) === koffi.address(b)
