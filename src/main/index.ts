@@ -7,7 +7,8 @@ import { logPath, preview, startFileLog } from './log'
 import { pasteInto } from './paste'
 import { findClaude, polish, polishEngine, prepare, shutdown as shutdownPolish } from './polish'
 import { loadSettings, saveSettings, settings, settingsPath, type Settings } from './settings'
-import { findModel, installModel, MODEL, removeStaleDownload, transcribe, warmUp } from './stt'
+import { LiveTranscriber } from './live'
+import { findModel, installModel, MODEL, removeStaleDownload, warmUp } from './stt'
 import { acceleratorKey, foregroundWindow, hasTextTarget, isKeyDown, sendMaskKey, windowInfo, type Hwnd, type WindowInfo } from './win32'
 
 const E2E = !!process.env.UTTER_E2E
@@ -38,7 +39,9 @@ let shown = false // pill visible for the current dictation
 let handsFree = false
 let cardOpen = false
 let downloading: number | undefined // 0..1 while the model downloads
-let pendingAudio: ((samples: Float32Array) => void) | undefined
+let pendingEnd: (() => void) | undefined
+/** Transcribes the current dictation as it comes in. */
+let live: LiveTranscriber | undefined
 
 function notify(body: string): void {
   if (Notification.isSupported()) new Notification({ title: 'Utter', body, silent: true }).show()
@@ -130,6 +133,8 @@ function begin(): boolean {
   handsFree = false
   cardOpen = false
   setState('recording')
+  live?.cancel()
+  live = new LiveTranscriber()
   send({ type: 'start' })
   // Esc cancels, but only while recording so we don't eat it the rest of the time.
   globalShortcut.register('Escape', () => void cancel())
@@ -143,6 +148,7 @@ function reveal(): void {
 
 function endRecording(): void {
   clearTimeout(maxTimer)
+  clearTap()
   if (globalShortcut.isRegistered('Escape')) globalShortcut.unregister('Escape')
 }
 
@@ -154,17 +160,21 @@ async function stop(): Promise<void> {
   setState('working')
   showPill()
   send({ type: 'thinking' })
+  const transcriber = live!
+  live = undefined
   try {
-    const samples = await new Promise<Float32Array>((resolve, reject) => {
-      pendingAudio = resolve
-      setTimeout(() => reject(new Error('No audio came back from the recorder')), 5000)
+    await new Promise<void>((resolve, reject) => {
+      pendingEnd = resolve
+      setTimeout(() => reject(new Error('The recorder never finished')), 5000)
       send({ type: 'stop' })
-    }).finally(() => (pendingAudio = undefined))
+    }).finally(() => (pendingEnd = undefined))
+    // Most of the audio was already transcribed while you talked; this waits for the last piece.
     const t0 = Date.now()
-    const raw = await transcribe(samples)
+    const raw = await transcriber.finish()
     const t1 = Date.now()
+    const audio = `${(transcriber.samples / 16000).toFixed(1)} s audio (${transcriber.piecesDone} pieces done while talking), stt after release ${t1 - t0} ms`
     if (!raw) {
-      console.log(`[utter] ${(samples.length / 16000).toFixed(1)} s audio, stt ${t1 - t0} ms: nothing recognised`)
+      console.log(`[utter] ${audio}: nothing recognised`)
       setState('idle')
       flash('error', "Didn't catch that", 1200)
       return
@@ -177,7 +187,7 @@ async function stop(): Promise<void> {
       })
     }
     console.log(
-      `[utter] ${(samples.length / 16000).toFixed(1)} s audio, stt ${t1 - t0} ms, polish ${Date.now() - t1} ms → ${targetInfo.app || '?'}: ${preview(text)}`
+      `[utter] ${audio}, polish ${Date.now() - t1} ms → ${targetInfo.app || '?'}: ${preview(text)}`
     )
     lastText = text
     if (!hasTextTarget(targetInfo)) {
@@ -220,6 +230,8 @@ async function cancel(): Promise<void> {
   if (state !== 'recording') return
   endRecording()
   handsFree = false
+  live?.cancel()
+  live = undefined
   send({ type: 'cancel' })
   setState('idle')
   if (shown) hidePill()
@@ -229,14 +241,27 @@ async function cancel(): Promise<void> {
 
 const isAltKey = (): boolean => settings.hotkey === 'LeftAlt' || settings.hotkey === 'RightAlt'
 
-let lastTapAt = 0
+/** After a quick tap the recording keeps going this long, in case a second tap makes it hands-free. */
+let tapTimer: NodeJS.Timeout | undefined
+/** The current press is the second of a double-tap. */
+let secondPress = false
 let stopOnRelease = false
+
+function clearTap(): void {
+  clearTimeout(tapTimer)
+  tapTimer = undefined
+  secondPress = false
+}
 
 /**
  * Single-key mode (Right Alt by default), driven by the low-level hook:
  *   hold          talk, release to paste
  *   double-tap    hands-free; the next press pastes
  *   tap / Alt+Tab ignored (the quiet recording is thrown away)
+ *
+ * A double-tap is one recording, not two: the first tap's recording is kept alive for
+ * DOUBLE_TAP_MS and the second tap just switches it to hands-free. (Stopping and restarting
+ * the mic between the taps raced, and sometimes left hands-free recording nothing.)
  */
 const soloKey = {
   press(): void {
@@ -244,6 +269,12 @@ const soloKey = {
     if (state === 'recording' && handsFree) {
       stopOnRelease = true
       if (isAltKey()) sendMaskKey()
+      return
+    }
+    if (state === 'recording' && tapTimer) {
+      clearTimeout(tapTimer)
+      tapTimer = undefined
+      secondPress = true
       return
     }
     // Start listening right away so the first word isn't lost; the pill waits for hold().
@@ -268,18 +299,25 @@ const soloKey = {
       return
     }
     if (state !== 'recording' || handsFree || !solo) return
+    if (secondPress) {
+      secondPress = false
+      if (heldMs >= HOLD_MS) void stop() // tap, then hold: plain hold-to-talk
+      else {
+        console.log('[key] double-tap: hands-free')
+        handsFree = true
+        reveal()
+      }
+      return
+    }
     if (heldMs >= HOLD_MS) {
       void stop()
       return
     }
-    if (Date.now() - lastTapAt < DOUBLE_TAP_MS) {
-      lastTapAt = 0
-      handsFree = true
-      reveal()
-      return
-    }
-    lastTapAt = Date.now()
-    void cancel()
+    // A single quick tap. Wait a moment for a second one before throwing the recording away.
+    tapTimer = setTimeout(() => {
+      tapTimer = undefined
+      void cancel()
+    }, DOUBLE_TAP_MS)
   },
   combo(): void {
     console.log('[key] another key pressed while held: shortcut, not dictation')
@@ -452,7 +490,8 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(permission === 'media'))
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => permission === 'media')
 
-  ipcMain.on('pill:audio', (_e, samples: Float32Array) => pendingAudio?.(samples))
+  ipcMain.on('pill:chunk', (_e, samples: Float32Array) => live?.push(samples))
+  ipcMain.on('pill:end', () => pendingEnd?.())
   ipcMain.on('pill:ready', (_e, ms: number) => console.log(`[utter] mic open in ${ms} ms`))
   ipcMain.on('pill:error', (_e, message: string) => {
     notify(`Microphone problem: ${message}`)
@@ -503,7 +542,10 @@ app.whenReady().then(async () => {
           return polishEngine() ?? null
         },
         polish: ({ raw, target }: { raw: string; target: WindowInfo }) => polish(raw, target),
-        prepare
+        prepare,
+        /** The talk-key handlers the keyboard hook calls, so tests can press and release it. */
+        key: soloKey,
+        handsFree: () => handsFree
       }
     })
   }

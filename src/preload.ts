@@ -18,9 +18,13 @@ const api = {
   onCommand(cb: (cmd: PillCommand) => void): void {
     ipcRenderer.on('pill:cmd', (_e, cmd: PillCommand) => cb(cmd))
   },
-  /** Sends the finished recording (16 kHz mono) to main. */
-  audio(samples: Float32Array): void {
-    ipcRenderer.send('pill:audio', samples)
+  /** A slice of the recording (16 kHz mono), sent as it's captured. */
+  chunk(samples: Float32Array): void {
+    ipcRenderer.send('pill:chunk', samples)
+  },
+  /** The recording is complete: every chunk has been sent. */
+  end(): void {
+    ipcRenderer.send('pill:end')
   },
   /** Mic is open and capturing; `ms` is how long that took. */
   ready(ms: number): void {

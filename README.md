@@ -74,7 +74,7 @@ None of them paste anything or touch your clipboard. Set `UTTER_FRESH=1` on the 
 
 ## Known limits
 
-- Text appears only after you stop talking, usually within a couple of seconds.
+- Text appears only after you let go. It's transcribed in pieces while you talk, so the wait stays around a second however long you spoke, plus about a second when polishing is on.
 - Right Alt does nothing while a window running as administrator is focused. Windows doesn't let normal apps see those keys.
 - The Windows microphone indicator flickers on a quick Right Alt tap, because the mic opens as soon as you press it.
 - Pasted text shows up in Windows clipboard history (`Win+V`).

@@ -14,7 +14,9 @@ const card = $('card')
 const canvas = $('wave') as HTMLCanvasElement
 const ctx = canvas.getContext('2d')!
 
-const recorder = new Recorder()
+const recorder = new Recorder((samples) => window.pill.chunk(samples))
+/** Keep listening this long after you let go: people release the key while finishing the last word. */
+const TAIL_MS = 150
 
 // ---- waveform -------------------------------------------------------------
 
@@ -164,23 +166,33 @@ async function start(): Promise<void> {
 }
 
 async function stop(send: boolean): Promise<void> {
-  if (send) mode = 'thinking'
-  const samples = await recorder.stop()
-  if (send) window.pill.audio(samples)
+  if (send) {
+    mode = 'thinking'
+    await new Promise((r) => setTimeout(r, TAIL_MS))
+  }
+  await recorder.stop()
+  if (send) window.pill.end()
 }
 
 recorder.warm().catch((err) => console.warn('mic warm-up failed', err))
 
+// Mic starts and stops run strictly one after another. Otherwise a stop that's still closing the
+// mic can tear down a start that came in right behind it.
+let mic: Promise<void> = Promise.resolve()
+const queue = (op: () => Promise<void>): void => {
+  mic = mic.then(op, op)
+}
+
 window.pill.onCommand((cmd: PillCommand) => {
   switch (cmd.type) {
     case 'start':
-      void start()
+      queue(start)
       break
     case 'stop':
-      void stop(true)
+      queue(() => stop(true))
       break
     case 'cancel':
-      void stop(false)
+      queue(() => stop(false))
       break
     case 'thinking':
       showWave('thinking')

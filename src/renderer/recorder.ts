@@ -1,16 +1,20 @@
-// Captures microphone audio as 16 kHz mono Float32 for the local speech model.
+// Captures microphone audio as 16 kHz mono Float32 for the local speech model and hands it over
+// in small chunks while recording, so the main process can transcribe as you talk.
 // Chromium resamples to the AudioContext's rate, so no manual resampling needed.
 
 const SAMPLE_RATE = 16000
+/** 64 ms per chunk: small enough that little audio sits waiting when you stop. */
+const CHUNK = 1024
 
 export class Recorder {
   private ctx: AudioContext | undefined
   private stream: MediaStream | undefined
   private node: ScriptProcessorNode | undefined
-  private chunks: Float32Array[] = []
   private starting: Promise<void> | undefined
   private analyser: AnalyserNode | undefined
   private frame = new Float32Array(512)
+
+  constructor(private onChunk: (samples: Float32Array) => void) {}
 
   /**
    * Opens and closes the mic once. The first open in a process spins up Chromium's audio
@@ -29,22 +33,18 @@ export class Recorder {
 
   private async open(): Promise<void> {
     if (this.ctx) return
-    this.chunks = []
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true }
     })
     this.ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
     const source = this.ctx.createMediaStreamSource(this.stream)
-    // Separate tap for the waveform: read every animation frame, so it moves smoothly
-    // even though the recording buffers below arrive only every 256 ms.
+    // Separate tap for the waveform, read every animation frame so it moves smoothly.
     this.analyser = this.ctx.createAnalyser()
     this.analyser.fftSize = 512
     source.connect(this.analyser)
     // ScriptProcessor is deprecated but needs no extra module file (CSP-friendly) and is plenty for mono 16 kHz.
-    this.node = this.ctx.createScriptProcessor(4096, 1, 1)
-    this.node.onaudioprocess = (e) => {
-      this.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)))
-    }
+    this.node = this.ctx.createScriptProcessor(CHUNK, 1, 1)
+    this.node.onaudioprocess = (e) => this.onChunk(new Float32Array(e.inputBuffer.getChannelData(0)))
     source.connect(this.node)
     this.node.connect(this.ctx.destination)
   }
@@ -58,11 +58,9 @@ export class Recorder {
     return Math.min(1, Math.sqrt(Math.sqrt(sum / this.frame.length) * 7))
   }
 
-  /** Stops recording and returns everything captured. Waits for a start still in progress so the mic never stays open. */
-  async stop(): Promise<Float32Array> {
+  /** Stops recording. Waits for a start still in progress so the mic never stays open. */
+  async stop(): Promise<void> {
     await this.starting?.catch(() => {})
-    const chunks = this.chunks
-    this.chunks = []
     this.node?.disconnect()
     this.stream?.getTracks().forEach((t) => t.stop())
     await this.ctx?.close().catch(() => {})
@@ -70,12 +68,5 @@ export class Recorder {
     this.node = undefined
     this.stream = undefined
     this.analyser = undefined
-    const out = new Float32Array(chunks.reduce((n, c) => n + c.length, 0))
-    let offset = 0
-    for (const c of chunks) {
-      out.set(c, offset)
-      offset += c.length
-    }
-    return out
   }
 }
