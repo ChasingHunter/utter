@@ -42,14 +42,21 @@ let downloading: number | undefined // 0..1 while the model downloads
 let pendingEnd: (() => void) | undefined
 /** Transcribes the current dictation as it comes in. */
 let live: LiveTranscriber | undefined
+let micOpen = false
 
 function notify(body: string): void {
   if (Notification.isSupported()) new Notification({ title: 'Utter', body, silent: true }).show()
   console.log(`[utter] ${body}`)
 }
 
+/** Commands sent before the pill page has loaded would be lost; they wait here instead. */
+let pillLoaded = false
+const pendingCmds: PillCommand[] = []
+
 function send(cmd: PillCommand): void {
-  pill?.webContents.send('pill:cmd', cmd)
+  if (!pill) return
+  if (!pillLoaded) pendingCmds.push(cmd)
+  else pill.webContents.send('pill:cmd', cmd)
 }
 
 /** "RightAlt" → "Right Alt", "Control+Shift+Space" → "Ctrl+Shift+Space". */
@@ -78,6 +85,19 @@ function createPill(): BrowserWindow {
   w.setAlwaysOnTop(true, 'screen-saver')
   // Clicks go through to whatever is underneath, except over the copy card (see pill:hover).
   w.setIgnoreMouseEvents(true, { forward: true })
+  pillLoaded = false
+  w.webContents.on('did-finish-load', () => {
+    pillLoaded = true
+    for (const cmd of pendingCmds.splice(0)) w.webContents.send('pill:cmd', cmd)
+  })
+  // The pill records the audio, so a dead pill means a silent Utter. Rebuild it.
+  w.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[utter] pill window died (${details.reason}), recreating it`)
+    void cancel()
+    w.destroy()
+    pill = createPill()
+  })
+  w.on('unresponsive', () => console.warn('[utter] pill window not responding'))
   void w.loadFile(join(__dirname, 'index.html'))
   return w
 }
@@ -135,6 +155,11 @@ function begin(): boolean {
   setState('recording')
   live?.cancel()
   live = new LiveTranscriber()
+  micOpen = false
+  const thisDictation = live
+  setTimeout(() => {
+    if (live === thisDictation && !micOpen) console.warn(`[utter] mic still not open 4 s after the key press (pill ${pillLoaded ? 'loaded' : 'not loaded'})`)
+  }, 4000)
   send({ type: 'start' })
   // Esc cancels, but only while recording so we don't eat it the rest of the time.
   globalShortcut.register('Escape', () => void cancel())
@@ -497,7 +522,10 @@ app.whenReady().then(async () => {
 
   ipcMain.on('pill:chunk', (_e, samples: Float32Array) => live?.push(samples))
   ipcMain.on('pill:end', () => pendingEnd?.())
-  ipcMain.on('pill:ready', (_e, ms: number) => console.log(`[utter] mic open in ${ms} ms`))
+  ipcMain.on('pill:ready', (_e, ms: number) => {
+    micOpen = true
+    console.log(`[utter] mic open in ${ms} ms`)
+  })
   ipcMain.on('pill:error', (_e, message: string) => {
     notify(`Microphone problem: ${message}`)
     void cancel()
