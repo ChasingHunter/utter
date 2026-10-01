@@ -12,7 +12,8 @@ I built it as a free, local stand-in for Wispr Flow after running out of Wispr's
 |---|---|
 | Hold Right Alt, talk, let go | The text is pasted where your cursor is |
 | Double-tap Right Alt | Hands-free: keep talking, tap Right Alt again to paste |
-| Tap Right Alt, or use it with another key | Nothing. It works as usual |
+| Tap Right Alt | Nothing |
+| Right Alt with another key | Works as usual in the app |
 | Esc while recording | Throws it away |
 
 A small black capsule at the bottom of the screen shows what's going on. The bars move with your voice once the mic is on (they sit dim for a moment first), then turn into a travelling pulse while it transcribes.
@@ -75,6 +76,7 @@ None of them paste anything or touch your clipboard. Set `UTTER_FRESH=1` on the 
 ## Known limits
 
 - Text appears only after you let go. It's transcribed in pieces while you talk, so the wait stays around a second however long you spoke, plus about a second when polishing is on.
+- While Utter runs, apps never see Right Alt on its own (that's what keeps menus in apps like Notepad from popping open and eating the paste). Quit Utter if something needs it.
 - Right Alt does nothing while a window running as administrator is focused. Windows doesn't let normal apps see those keys.
 - The Windows microphone indicator flickers on a quick Right Alt tap, because the mic opens as soon as you press it.
 - Pasted text shows up in Windows clipboard history (`Win+V`).
