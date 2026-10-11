@@ -30,7 +30,7 @@ The transcript, app name and window title go to Anthropic when polishing is on. 
 
 ## Install
 
-Run `Utter-Setup-<version>.exe` from `dist/` (build it with `npm run dist`). It installs per user and starts with Windows. On first launch it offers to download the speech model (482 MB). If [Orbit](https://github.com/ChasingHunter/orbit) already downloaded it, Utter uses that copy.
+Download `Utter-Setup-<version>.exe` from [Releases](https://github.com/ChasingHunter/utter/releases/latest) and run it, or build it yourself with `npm run dist` (it lands in `dist/`). The installer isn't code signed, so SmartScreen may warn you: click "More info", then "Run anyway". It installs per user and starts with Windows. On first launch it offers to download the speech model (482 MB). If [Orbit](https://github.com/ChasingHunter/orbit) already downloaded it, Utter uses that copy.
 
 Utter has no window. Look for the waveform icon in the tray (it may be behind the `^` arrow).
 
