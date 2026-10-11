@@ -39,7 +39,7 @@ Utter has no window. Look for the waveform icon in the tray (it may be behind th
 You need Windows 10 or 11 and Node 22 or newer.
 
 ```bash
-git clone <this repo> utter
+git clone https://github.com/ChasingHunter/utter.git
 cd utter
 npm install
 npm start
